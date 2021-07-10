@@ -52,10 +52,11 @@ The accuracy of orientation field estimation is evaluated by the average Root Me
 | ExSearch-B   | 13.54     | 11.21    | 14.20     | 14.95     |
 | ExSearch     | 13.01     | 10.85    | 13.99     | 14.27     |
 | FingerNet    | 17.82     | 13.67    | 18.42     | 21.50     |
-| Single       | 12.46     | 9.91     | 12.91     | 14.65     |
-| Single-M     | 12.20     | 9.65     | 12.73     | 14.39     |
-| Ours         | **12.16** | **9.87** | **12.83** | **13.85** |
-| Ours-M       | **12.10** | **9.60** | **12.71** | **14.07** |
+|              |           |          |           |           |
+| **Single**   | 12.46     | 9.91     | 12.91     | 14.65     |
+| **Single-M** | 12.20     | 9.65     | 12.73     | 14.39     |
+| **Ours**     | **12.16** | **9.87** | **12.83** | **13.85** |
+| **Ours-M**   | **12.10** | **9.60** | **12.71** | **14.07** |
 
 Fingerprint matching experiment is applied to examine the contribution of the proposed orientation field estimation in overall fingerprint identification system. CMC curves of different algorithms on latent fingerprint database NIST SD27 as well as three subsets: (a) all (258 latents), (b) good quality (88 latents), (c) bad quality (85 latents), (d) ugly quality (85 latents). “-M” denotes manually marked fingerprint pose.
 
@@ -67,7 +68,6 @@ If you find this study useful for your reesearch, please cite our paper:
 @inproceedings{duan2021prior,
 author = {Yongjie Duan, Jianjiang Feng, Jiwen Lu, and Jie Zhou},
 booktitle = {Proceedings of the IEEE International Joint Conference on Biometrics},
-pages = {TODO:},
 title = {Orientation Field Estimation for Latent Fingerprints with Prior Knowledge of Fingerprint Pattern},
 year = {2021}
 }
