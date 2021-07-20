@@ -24,7 +24,7 @@ tensorboard==2.4.1
 ```
 
 ## Trained Model
-Our trained model ([download link](https://drive.google.com/file/d/1u0aA8f9FV7jlE7QfOY_g2WdcJ1ZtpqVE/view?usp=sharing)).
+Our trained model ([download link](https://drive.google.com/file/d/1qNRwxre3yobCKubN3xnTMVnQ7-VOohgi/view?usp=sharing)).
 Please download and unzip to the current directory as follows:
 
 ```

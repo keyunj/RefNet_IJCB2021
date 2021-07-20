@@ -7,10 +7,8 @@ import ops
 
 def generate_model(args):
     print(f'=> create model "{args.model_name}"')
-    if args.model_name == "singleresanchor":
+    if args.model_name == "septype":
         model = ops.SingleAnchor(args)
-    elif args.model_name == "multiresanchor":
-        model = ops.MultiAnchor(args)
     else:
         raise ValueError(f"unsupport model architecture {args.model_name}")
     return model

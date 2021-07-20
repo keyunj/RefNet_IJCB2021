@@ -14,7 +14,9 @@ def parse_args():
     parser.add_argument("-d", "--dataset", default="mixhard", help="dataset directory")
     parser.add_argument("-p", "--phase", default="train", help="train/eval/play")
     parser.add_argument("-w", "--workers", default=16, type=int, help="number of workers (default: 16)")
-    parser.add_argument("--model-name", default="singleresanchor", type=str, help="model name")
+    parser.add_argument("--model-name", default="septype", type=str, help="model name")
+    parser.add_argument("--model-type", default="0", type=str, help="model name")
+    parser.add_argument("--pose-type", default="manual", type=str, help="pose type")
     parser.add_argument("--gpu-id", default=[2], type=int, nargs="+", help="gpu device(s) used")
     parser.add_argument("--no-cuda", dest="use_cuda", action="store_false", default=True)
     parser.add_argument("--in-chns", default=1, type=int, help="input channels")
@@ -27,9 +29,9 @@ def parse_args():
     parser.add_argument("--feat-layers", default=[2, 2, 2, 1, 2], type=int, nargs="+", help="feature layers")
     parser.add_argument("--feat-resblks", default=4, type=int, help="number of res-blocks")
     parser.add_argument("--aspp-filters", default=[256, 128], type=int, nargs="+", help="feature channels")
-    parser.add_argument("--type-filters", default=[256, 512], type=int, nargs="+", help="feature channels")
-    parser.add_argument("--type-layers", default=[2, 2], type=int, nargs="+", help="feature layers")
-    parser.add_argument("--type-resblks", default=1, type=int, help="number of res-blocks")
+    # parser.add_argument("--type-filters", default=[256, 512], type=int, nargs="+", help="feature channels")
+    # parser.add_argument("--type-layers", default=[2, 2], type=int, nargs="+", help="feature layers")
+    # parser.add_argument("--type-resblks", default=1, type=int, help="number of res-blocks")
     parser.add_argument("--ori-stride", default=1, type=int, help="angle stride")
     parser.add_argument("--n-anchors", default=5, type=int, help="number of anchors")
 
@@ -43,8 +45,8 @@ def parse_args():
     parser.add_argument("--seed", default=2020, type=int, help="mannual seed")
     parser.add_argument("--weight-decay", default=5e-4, type=float, help="weight decay")
     parser.add_argument("--start-epoch", default=0, type=int, help="start epoch id")
-    parser.add_argument("--loss-lst", default=["fseg", "fori"], type=str, nargs="+", help="loss")
-    parser.add_argument("--loss-weight", default=[10.0, 0.5], type=float, nargs="+", help="loss weights")
+    parser.add_argument("--loss-lst", default=["ori", "seg", "type"], type=str, nargs="+", help="loss")
+    parser.add_argument("--loss-weight", default=[0.5, 10.0, 10.0], type=float, nargs="+", help="loss weights")
     parser.add_argument("--joint-epoch", default=10, type=int, help="number of epoch to jointly training")
     parser.add_argument("--max-epochs", default=200, type=int, help="number of total epochs")
 
@@ -106,6 +108,8 @@ def args_train(args_original):
         args.logdir = osp.join("checkpoints", "debug")
     else:
         args.logdir = osp.join("checkpoints", f"{args.model_name}_{args.dataset}_{args.id}")
+
+    args.logdir = osp.join(args.logdir, args.model_type)
 
     # resume
     if args.resume is not None:

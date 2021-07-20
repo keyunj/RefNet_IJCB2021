@@ -40,20 +40,19 @@ class EnhanceModule(nn.Module):
             return img_real * F.interpolate(mask, scale_factor=self.factor)
 
 
-class BackboneFeature(nn.Module):
+class BaseFeature(nn.Module):
     def __init__(
         self,
         in_chns,
         nb_filters=[64, 128, 256],
         nb_layers=[2, 2, 2],
-        nb_resblks=4,
         kernel_size=3,
         stride=1,
         padding=1,
         norm="b",
         act="p",
     ):
-        super(BackboneFeature, self).__init__()
+        super(BaseFeature, self).__init__()
 
         layers = []
 
@@ -78,9 +77,6 @@ class BackboneFeature(nn.Module):
                     )
                 )
             layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
-
-        for _ in range(nb_resblks):
-            layers.append(ResBlock(cur_channels, kernel_size, stride, padding, dilation=1, norm=norm, act=act))
 
         self.layers = nn.Sequential(*layers)
 
@@ -130,6 +126,7 @@ class ASPPModule(nn.Module):
         feat_filters=[256, 256],
         feat_layers=[1, 2],
         out_chns=[1],
+        scalar_chns=1,
         kernel_size=3,
         stride=1,
         padding=1,
@@ -147,9 +144,9 @@ class ASPPModule(nn.Module):
                 ASPPSingleModule(in_chns, aspp_filters, out_chns, kernel_size, stride, p, d, norm=norm, act=act)
             )
 
-        self.ftype = nn.Sequential(
-            BackboneFeature(in_chns, feat_filters, feat_layers, 0, kernel_size, stride, padding, norm=norm, act=act),
-            ClassifierModule(feat_filters[-1], 1, kernel_size, stride, padding, norm=norm, act=act),
+        self.scalar = nn.Sequential(
+            BaseFeature(in_chns, feat_filters, feat_layers, kernel_size, stride, padding, norm=norm, act=act),
+            ClassifierModule(feat_filters[-1], scalar_chns, kernel_size, stride, padding, norm=norm, act=act),
         )
 
     def forward(self, x):
@@ -159,8 +156,8 @@ class ASPPModule(nn.Module):
             out = module(x)
             out_fusion = [y1 + y2 for y1, y2 in zip(out_fusion, out)]
 
-        type_pred = self.ftype(x)
-        return (*out_fusion, type_pred)
+        scalar_pred = self.scalar(x)
+        return (*out_fusion, scalar_pred)
 
 
 class ASPPSingleModule(nn.Module):
@@ -193,80 +190,6 @@ class ASPPSingleModule(nn.Module):
         for module in self.out_list:
             out_list.append(module(conv))
         return out_list
-
-
-class OriSegASPPModule(nn.Module):
-    def __init__(
-        self,
-        feat_channels=[256, 128],
-        ori_channels=90,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        dilation=[1, 4, 8],
-        norm="b",
-        act="p",
-    ):
-        super(OriSegASPPModule, self).__init__()
-        self.aspp = nn.ModuleList()
-        for d in dilation:
-            p = d * (kernel_size // 2)
-            self.aspp.append(
-                OriSegSingleModule(
-                    feat_channels, ori_channels, kernel_size, stride, padding=p, dilation=d, norm=norm, act=act
-                )
-            )
-
-    def forward(self, x, anchor):
-        # predict orientation and segmentation
-        ori_fusion = 0
-        seg_fusion = 0
-        for module in self.aspp:
-            ori, seg = module(x, anchor)
-            ori_fusion += ori
-            seg_fusion += seg
-        return ori_fusion, seg_fusion
-
-
-class OriSegSingleModule(nn.Module):
-    def __init__(
-        self,
-        feat_channels=[256, 128],
-        ori_channels=90,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        dilation=1,
-        norm="b",
-        act="p",
-    ):
-        super(OriSegSingleModule, self).__init__()
-        in_chns = feat_channels[0] + ori_channels + 1
-        self.conv = SingleConv(
-            in_chns,
-            feat_channels[0],
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-            dilation=dilation,
-            norm=norm,
-            act=act,
-        )
-        self.ori_layers = nn.Sequential(
-            SingleConv(feat_channels[0], feat_channels[1], norm=norm, act=act),
-            nn.Conv2d(feat_channels[1], ori_channels, kernel_size=1),
-        )
-        self.seg_layers = nn.Sequential(
-            SingleConv(feat_channels[0], feat_channels[1], norm=norm, act=act),
-            nn.Conv2d(feat_channels[1], 1, kernel_size=1),
-        )
-
-    def forward(self, x, anchor=None):
-        if anchor is not None:
-            conv = self.conv(torch.cat((x, anchor), dim=1))
-        else:
-            raise (ValueError("Anchor is required to predict orientation"))
-        return self.ori_layers(conv), self.seg_layers(conv)
 
 
 class ResBlock(nn.Module):
@@ -341,26 +264,36 @@ def transform_angle(ori_p, anchor_ang, ori_stride):
     return ori_p
 
 
-def transform_anchor(anchor, trans, theta, tar_size, angle=False):
-    sin_theta = torch.sin(theta * np.pi / 180.0)
-    cos_theta = torch.cos(theta * np.pi / 180.0)
-    affine_rotate = torch.stack(
-        (torch.cat((cos_theta, -sin_theta), dim=1), torch.cat((sin_theta, cos_theta), dim=1)), dim=1
-    )
-    affine_trans = torch.bmm(affine_rotate, -trans.view(-1, 2, 1))
-    affine_matrix = torch.cat((affine_rotate, affine_trans), dim=2)  # B x 2 x 3
-    indices = F.affine_grid(affine_matrix, tar_size, align_corners=False)
+def transform_anchor(anchor, tar_size, trans, theta, scale=[[1.0, 1.0]], padding_mode="zeros", angle=False):
+    align = [tar_size[3] * 1.0 / anchor.size(3), tar_size[2] * 1.0 / anchor.size(2)]  # x, y
+    grid = generate_rigid_grid(tar_size, trans, theta, scale=scale, align=align)
 
     if angle:
-        new_anchor = anchor - theta.view(-1, 1, 1, 1)
-        new_anchor = transform_anchor_ang(new_anchor, indices)
+        new_anchor = anchor - theta.view(-1, 1, 1, 1) * 90
+        new_anchor = transform_anchor_angle(new_anchor, grid)
     else:
-        new_anchor = F.grid_sample(anchor, indices, padding_mode="border", align_corners=False)
+        new_anchor = F.grid_sample(anchor, grid, padding_mode=padding_mode, align_corners=False)
 
     return new_anchor
 
 
-def transform_anchor_ang(anchor, grid):
+def generate_rigid_grid(tar_size, trans, theta, scale=[[1.0, 1.0]], align=[1.0, 1.0]):
+    if not torch.is_tensor(scale):
+        scale = torch.tensor(scale).type_as(theta)
+    sin_theta = torch.sin(theta * np.pi / 180)
+    cos_theta = torch.cos(theta * np.pi / 180)
+    affine_rotate = torch.stack(
+        (torch.cat((cos_theta, -sin_theta), dim=1) * scale, torch.cat((sin_theta, cos_theta), dim=1) * scale,), dim=1,
+    )
+    affine_trans = torch.bmm(affine_rotate, -trans.view(-1, 2, 1))
+    affine_matrix = torch.cat((affine_rotate, affine_trans), dim=2)  # B x 2 x 3
+    grid = F.affine_grid(affine_matrix, tar_size, align_corners=False)
+
+    grid = torch.stack((grid[..., 0] * align[0], grid[..., 1] * align[1]), dim=-1)
+    return grid
+
+
+def transform_anchor_angle(anchor, grid):
     cos_2angle = torch.cos(anchor * np.pi / 90)
     sin_2angle = torch.sin(anchor * np.pi / 90)
     cos_2angle = F.grid_sample(cos_2angle, grid, padding_mode="border", align_corners=False)
@@ -379,13 +312,37 @@ def compute_local_rotation_angle(grid_pred, eps=1e-8):
     lower_pred = F.grid_sample(grid_pred, lower_grid, padding_mode="border", align_corners=False)
     higher_pred = F.grid_sample(grid_pred, higher_grid, padding_mode="border", align_corners=False)
     delta_pred = higher_pred - lower_pred
+    delta_pred = torch.stack((delta_pred[:, 0] * W, delta_pred[:, 1] * H), dim=1)
     # add offset when the delta is 0
     R2 = (delta_pred ** 2).sum(dim=1)
-    vec0 = torch.tensor(2.0 / W).type_as(delta_pred)
+    vec0 = torch.tensor(2.0).type_as(delta_pred)
     delta_pred[:, 0] = torch.where(R2 <= eps, vec0, delta_pred[:, 0])
     # compute rotation angle
     local_angle = torch.atan2(-delta_pred[:, 1], delta_pred[:, 0])[:, None] * 180 / np.pi
     return local_angle
+
+
+# def transform_anchor(anchor, trans, theta, tar_size, angle=False):
+#     sin_theta = torch.sin(theta * np.pi / 180.0)
+#     cos_theta = torch.cos(theta * np.pi / 180.0)
+#     affine_rotate = torch.stack(
+#         (torch.cat((cos_theta, -sin_theta), dim=1), torch.cat((sin_theta, cos_theta), dim=1)), dim=1
+#     )
+#     affine_trans = torch.bmm(affine_rotate, -trans.view(-1, 2, 1))
+#     affine_matrix = torch.cat((affine_rotate, affine_trans), dim=2)  # B x 2 x 3
+#     indices = F.affine_grid(affine_matrix, tar_size, align_corners=False)
+
+#     if angle:
+#         new_anchor = anchor - theta.view(-1, 1, 1, 1)
+#         cos_2angle = torch.cos(new_anchor * np.pi / 90)
+#         sin_2angle = torch.sin(new_anchor * np.pi / 90)
+#         cos_2angle = F.grid_sample(cos_2angle, indices, padding_mode="border", align_corners=False)
+#         sin_2angle = F.grid_sample(sin_2angle, indices, padding_mode="border", align_corners=False)
+#         new_anchor = torch.atan2(sin_2angle, cos_2angle) * 90 / np.pi
+#     else:
+#         new_anchor = F.grid_sample(anchor, indices, padding_mode="border", align_corners=False)
+
+#     return new_anchor
 
 
 def weighted_filter(blk_size=5):

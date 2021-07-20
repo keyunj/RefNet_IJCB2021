@@ -209,18 +209,20 @@ class MSELoss(nn.Module):
         return loss
 
 
-class OriQuaLoss(nn.Module):
-    def __init__(self, use_cuda=False, eps=1e-6):
-        super(OriQuaLoss, self).__init__()
+class FocalBCELoss(nn.Module):
+    def __init__(self, gamma=2.0, use_cuda=False, eps=1e-6):
+        super(FocalBCELoss, self).__init__()
         self.eps = eps
-        self.loss_bce = CELoss(use_cuda=use_cuda, eps=eps)
+        self.loss_bce = FocalLoss(gamma=gamma, use_cuda=use_cuda, eps=eps)
 
-    def forward(self, input, target, mask=None, logits=True):
+    def forward(self, input, target, logits=True):
         if logits:
             p = torch.sigmoid(input)
         else:
             p = input.clamp(self.eps, 1.0 - self.eps)
 
+        pt = target * p + (1.0 - target) * (1.0 - p)
         log_pt = target * torch.log(p) + (1.0 - target) * torch.log(1.0 - p)
-        loss_bce = self.loss_bce(log_pt, mask)
+
+        loss_bce = self.loss_bce(log_pt, pt)
         return loss_bce
