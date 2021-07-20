@@ -29,11 +29,8 @@ Please download and unzip to the current directory as follows:
 
 ```
 Root
-├── checkpoints
-│   └── multiresanchor_mixhard_20201005
-│       ├── checkpoint
-│       ├── config.json
-│       └── epoch_79_.pth.tar
+└── checkpoints
+    └── septype_mixhard_20201012
 ```
 
 ## Results
